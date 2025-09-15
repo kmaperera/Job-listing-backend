@@ -9,6 +9,11 @@ export const FIND_USER_BY_EMAIL = `
   SELECT * FROM users WHERE email = ?
 `;
 
+// Find user by name
+export const FIND_USER_BY_NAME = `
+  SELECT * FROM users WHERE userName = ?
+`;
+
 // Delete (hard)
 export const DELETE_USER_BY_ID = `
   DELETE FROM users WHERE id = ?

@@ -2,6 +2,7 @@ import pool from '../config/dbConnection.js';
 import {
     CREATE_USER,
     FIND_USER_BY_EMAIL,
+    FIND_USER_BY_NAME,
     DELETE_USER_BY_ID,
     SOFT_DELETE_USER_BY_ID,
     GET_ALL_USERS,
@@ -47,19 +48,28 @@ export const register = async (req, res) => {
 };
 
 export const login = async (req, res) => {
-    const { email, password } = req.body;
+    const {  name_or_email, password } = req.body;
 
-    if (!email || !password) {
-        return res.status(400).json({ error: 'Email and password are required' });
+    if (!name_or_email || !password) {
+        return res.status(400).json({ error: 'Invalid Login' });
     }
 
     try {
-        const [users] = await pool.query(FIND_USER_BY_EMAIL, [email]);
-        if (users.length === 0) {
+        const [users1] = await pool.query(FIND_USER_BY_EMAIL, [name_or_email]);
+        const [users2] = await pool.query(FIND_USER_BY_NAME, [name_or_email]);
+
+        if (users1.length === 0 && users2.length === 0) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
-        const user = users[0];
+        let user=null;
+        if (users1.length === 0){
+            console.log(users2)
+            user = users2[0];
+        }else {   
+            user= users1[0];
+        }
+
         const isMatch = await comparePassword(password, user.password);
 
         if (!isMatch) {
