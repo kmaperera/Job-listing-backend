@@ -64,7 +64,6 @@ export const login = async (req, res) => {
 
         let user=null;
         if (users1.length === 0){
-            console.log(users2)
             user = users2[0];
         }else {   
             user= users1[0];
