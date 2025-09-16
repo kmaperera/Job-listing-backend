@@ -52,4 +52,4 @@ export const GET_ACTIVE_USER_BY_ID = `
 // View inactive user by user_id
 export const GET_INACTIVE_USER_BY_ID = `
   SELECT user_id, userName, email, role, created_at FROM users WHERE user_id = ? AND is_deleted = TRUE
-`;
+`; 

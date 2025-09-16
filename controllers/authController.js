@@ -1,4 +1,5 @@
 import pool from '../config/dbConnection.js';
+import cloudinary from "../utils/cloudinary.js";
 import {
     CREATE_USER,
     FIND_USER_BY_EMAIL,
