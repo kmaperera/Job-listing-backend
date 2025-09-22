@@ -3,9 +3,7 @@ import {
     createEmployerProfile,
     getEmployerDetails,
     updateEmployerDetails,
-    updateProfilePicture, 
-    getUserProfile,
-    deleteProfilePicture,
+    deleteProfilePicture
 } from '../controllers/userController.js';
 import upload from '../utils/multer.js';
 import { verifyToken } from '../middlewares/authMiddleware.js';
@@ -13,7 +11,12 @@ import { verifyToken } from '../middlewares/authMiddleware.js';
 const router = express.Router();
 
 // Add employer details
-router.post("/employer/details", verifyToken, createEmployerProfile);
+router.post(
+  "/employer/details",
+  verifyToken,
+  upload.single("profile_picture"), // <-- required if profile_picture file is sent
+  createEmployerProfile
+);
 
 // Get employer details
 router.get("/employer/details", verifyToken, getEmployerDetails);
@@ -23,17 +26,18 @@ router.put("/employer/details", verifyToken, updateEmployerDetails);
 
 
 // Upload profile picture
-router.post(
-  "/profile-picture",
-  upload.single("profile_picture"), // expects form-data field name 'profile_picture'
+router.patch(
+  "/employer/details",
   verifyToken,
-  updateProfilePicture
+  upload.single("profile_picture"),
+  updateEmployerDetails
 );
 
-// Get user profile info
-router.get("/profile", verifyToken, getUserProfile);
-
-// Delete profile picture
-router.delete("/profile-picture", verifyToken, deleteProfilePicture);
+// Delete only profile picture
+router.delete(
+  "/employer/profile-picture",
+  verifyToken,
+  deleteProfilePicture
+);
 
 export default router;

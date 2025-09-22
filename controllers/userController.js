@@ -1,19 +1,17 @@
 import cloudinary from "../utils/cloudinary.js";
 import pool from "../config/dbConnection.js";
 import {
-    insertEmployerDetailsQuery,
-    getEmployerDetailsQuery,
-    updateEmployerDetailsQuery,
-    updateProfilePictureQuery,
-    getUserProfileQuery,
-    removeProfilePictureQuery
+  insertEmployerDetailsQuery,
+  getEmployerDetailsQuery,
+  updateEmployerDetailsQuery,
+  getProfilePictureQuery,
+  deleteProfilePictureQuery
 } from "../queries/userQueries.js";
-
 
 // Add employer details (only once after register)
 export const createEmployerProfile = async (req, res) => {
   try {
-    const userId = req.user.id; // from verifyToken middleware
+    const userId = req.user.id; // JWT user_id
     const {
       company_name,
       company_address,
@@ -23,20 +21,42 @@ export const createEmployerProfile = async (req, res) => {
       description
     } = req.body;
 
-    if (!userId) {
-      return res.status(400).json({ error: "User ID missing" });
+    if (!company_name || !company_address) {
+      return res.status(400).json({ error: "Company name and address are required" });
     }
 
+    let profilePictureUrl = null;
+
+    // Cloudinary upload from memory buffer
+    if (req.file) {
+      const uploadFromBuffer = (fileBuffer) =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: "employers/profile_pictures" },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          );
+          stream.end(fileBuffer);
+        });
+
+      const result = await uploadFromBuffer(req.file.buffer);
+      profilePictureUrl = result.secure_url;
+    }
+
+    // Insert employer profile
     await pool.query(
-      `INSERT INTO employer
-      (user_id, company_name, company_address, company_website, contact_number, industry, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [userId, company_name, company_address, company_website, contact_number, industry, description]
+      insertEmployerDetailsQuery,
+      [userId, company_name, company_address, company_website, contact_number, industry, description, profilePictureUrl]
     );
 
-    res.json({ message: "Employer profile created successfully" });
+    res.json({
+      message: "Employer profile created successfully",
+    });
 
   } catch (err) {
+    console.error("Create Employer Error:", err);
     res.status(500).json({ error: err.message });
   }
 };
@@ -59,64 +79,57 @@ export const getEmployerDetails = async (req, res) => {
 // Update employer details
 export const updateEmployerDetails = async (req, res) => {
   try {
-    const { company_name, company_address, company_website, contact_number, industry } = req.body;
+    const userId = req.user.id;
 
-    await pool.query(updateEmployerDetailsQuery, [
-      company_name,
-      company_address,
-      company_website,
-      contact_number,
-      industry,
-      req.user.user_id
-    ]);
+    let profilePictureUrl = null;
 
-    res.json({ message: "Employer details updated successfully" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-
-// Upload or update profile picture
-export const updateProfilePicture = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
-    // Upload to Cloudinary
-    cloudinary.uploader.upload_stream(
-      { folder: "profile_pictures" },
-      async (error, result) => {
-        if (error) return res.status(500).json({ error: error.message });
-
-        // Save Cloudinary URL
-        await pool.query(updateProfilePictureQuery, [
-          result.secure_url,
-          req.user.user_id,
-        ]);
-
-        res.json({
-          message: "Profile picture uploaded successfully",
-          profile_picture: result.secure_url,
+    // If file uploaded, upload to Cloudinary
+    if (req.file) {
+      const uploadFromBuffer = (fileBuffer) =>
+        new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { folder: "employers/profile_pictures" },
+            (error, result) => {
+              if (error) return reject(error);
+              resolve(result);
+            }
+          );
+          stream.end(fileBuffer);
         });
-      }
-    ).end(req.file.buffer);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
 
-// Get user profile (with profile picture)
-export const getUserProfile = async (req, res) => {
-  try {
-    const [rows] = await pool.query(getUserProfileQuery, [req.user.id]);
-
-    if (rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
+      const result = await uploadFromBuffer(req.file.buffer);
+      profilePictureUrl = result.secure_url;
     }
 
-    res.json(rows[0]);
+    // Update text fields (if any)
+    const data = req.body || {};
+    const fields = Object.keys(data).filter(
+      (key) => data[key] !== undefined && data[key] !== ""
+    );
+
+    const values = fields.map((key) => data[key]);
+
+    // Add profile_picture to update if uploaded
+    if (profilePictureUrl) {
+      fields.push("profile_picture");
+      values.push(profilePictureUrl);
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({ error: "No fields or file to update" });
+    }
+
+    values.push(userId); // WHERE condition
+
+    await pool.query(
+      `UPDATE employer SET ${fields.map((f) => f + " = ?").join(", ")} WHERE user_id = ?`,
+      values
+    );
+
+    res.json({
+      message: "Employer profile updated successfully",
+      profile_picture: profilePictureUrl || undefined,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -125,26 +138,25 @@ export const getUserProfile = async (req, res) => {
 // Delete profile picture
 export const deleteProfilePicture = async (req, res) => {
   try {
-    // Get current profile picture
-    const [rows] = await pool.query(getUserProfileQuery, [req.user.id]);
+    const [rows] = await pool.query(getProfilePictureQuery, [req.user.id]);
+
     if (rows.length === 0) {
-      return res.status(404).json({ error: "User not found" });
+      return res.status(404).json({ error: "Employer not found" });
     }
 
     const currentPic = rows[0].profile_picture;
-
-    if (currentPic) {
-      // Extract public_id from Cloudinary URL
-      const parts = currentPic.split("/");
-      const fileWithExt = parts[parts.length - 1]; // e.g. "abc123.jpg"
-      const publicId = "profile_pictures/" + fileWithExt.split(".")[0];
-
-      // Delete from Cloudinary
-      await cloudinary.uploader.destroy(publicId);
+    if (!currentPic) {
+      return res.status(400).json({ error: "No profile picture to delete" });
     }
 
-    // Remove from DB
-    await pool.query(removeProfilePictureQuery, [req.user.id]);
+    // Extract Cloudinary public_id
+    const parts = currentPic.split("/");
+    const fileWithExt = parts[parts.length - 1];
+    const publicId = "employers/" + fileWithExt.split(".")[0];
+
+    await cloudinary.uploader.destroy(publicId);
+
+    await pool.query(deleteProfilePictureQuery, [req.user.id]);
 
     res.json({ message: "Profile picture deleted successfully" });
   } catch (err) {
